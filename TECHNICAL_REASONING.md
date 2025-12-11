@@ -2,7 +2,7 @@
 
 ## Peninsula Technical Test - Fullstack
 
-**Author:** Candidate
+**Author:** Marco MAcias
 **Date:** December 2024
 **Technology Stack:** TypeScript, React Native, Expo, Supabase (PostgreSQL), NativeWind
 

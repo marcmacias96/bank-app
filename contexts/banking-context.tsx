@@ -103,7 +103,8 @@ export function BankingProvider({ children }: BankingProviderProps) {
       try {
         setIsLoading(true);
         setError(null);
-        const newAccount = await createAccountService(initialBalance, currency);
+        // Pass isDemo: false when user is authenticated
+        const newAccount = await createAccountService(initialBalance, currency, !isAuthenticated);
         setAccount(newAccount);
       } catch (err) {
         if (err instanceof BankingError) {
@@ -121,7 +122,7 @@ export function BankingProvider({ children }: BankingProviderProps) {
         setIsLoading(false);
       }
     },
-    []
+    [isAuthenticated]
   );
 
   /**

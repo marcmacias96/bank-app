@@ -288,16 +288,24 @@ export async function getAccount(accountId: string): Promise<Account> {
 }
 
 /**
- * Fetches the first account for the current user or demo account.
+ * Fetches the account for the current authenticated user.
  *
  * @returns Account details or null if no account exists
  */
 export async function getUserAccount(): Promise<Account | null> {
-  // First try to get any account (RLS will filter to user's or demo accounts)
+  // Get the current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return null;
+  }
+
+  // Fetch account filtered by the authenticated user's ID
   const { data, error } = await supabase
     .from("accounts")
     .select("*")
-    .order("created_at", { ascending: true })
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -319,10 +327,17 @@ export async function getUserAccount(): Promise<Account | null> {
  * @returns Demo account
  */
 export async function getOrCreateDemoAccount(): Promise<Account> {
-  // Try to get existing demo account
-  const existing = await getUserAccount();
-  if (existing) {
-    return existing;
+  // Try to get existing demo account (user_id is null for demo accounts)
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("*")
+    .is("user_id", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!error && data) {
+    return mapAccountRow(data as AccountRow);
   }
 
   // Create new demo account
