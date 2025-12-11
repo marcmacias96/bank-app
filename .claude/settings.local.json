@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run reset-project:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
