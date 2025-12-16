@@ -1,12 +1,12 @@
-import { useState } from "react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
 } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
+import { useState } from "react";
 import { AuthTabs } from "./auth-tabs";
 import { LoginForm } from "./login-form";
 import { RegisterForm } from "./register-form";
@@ -23,7 +23,7 @@ export function AuthForm() {
     <Card className="w-full max-w-sm">
       <CardHeader>
         <CardTitle>
-          <Text className="text-2xl font-bold">Peninsula Banking</Text>
+          <Text className="text-2xl font-bold">DOLAR APP</Text>
         </CardTitle>
         <CardDescription>
           <Text className="text-muted-foreground">

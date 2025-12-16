@@ -1,50 +1,140 @@
-# Welcome to your Expo app 👋
+# DOLAR APP - Banking System
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+React Native banking app with concurrent balance management using optimistic locking.
 
-## Get started
+**Peninsula Technical Test - Fullstack**
 
-1. Install dependencies
+## Tech Stack
 
-   ```bash
-   npm install
-   ```
+- React Native + Expo
+- TypeScript
+- Supabase (PostgreSQL + Auth)
+- NativeWind (Tailwind CSS)
 
-2. Start the app
+## Get Started
 
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+### 1. Install dependencies
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Configure environment
 
-## Learn more
+Copy `.env.example` to `.env.local` and fill in your Supabase credentials:
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+cp .env.example .env.local
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Required variables:
+```
+EXPO_PUBLIC_SUPABASE_URL=your-supabase-url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_KEY=your-supabase-service-key  # Only for tests
+```
 
-## Join the community
+### 3. Run database migrations
 
-Join our community of developers creating universal apps.
+Apply the SQL migrations in `supabase/migrations/` to your Supabase project:
+- `001_banking.sql` - Core banking schema and functions
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### 4. Start the app
+
+```bash
+npm start          # Start Expo dev server
+npm run ios        # iOS simulator
+npm run android    # Android emulator
+npm run web        # Web browser
+```
+
+## Running Concurrency Tests
+
+The project includes a test suite that validates the optimistic locking implementation.
+
+### Prerequisites
+
+- `SUPABASE_SERVICE_KEY` in your `.env.local` (service role key from Supabase Dashboard → Settings → API)
+
+### Run tests
+
+```bash
+npx tsx scripts/test-concurrency.ts
+```
+
+### Test Cases
+
+| Test | Description | Success Criteria |
+|------|-------------|------------------|
+| **Concurrent Deposits** | 20 parallel deposits of 10 EUR | Final balance = 200 EUR exactly |
+| **Mixed Operations** | 15 deposits + 15 withdrawals concurrently | Balance >= 0 |
+| **Overdraft Prevention** | 10 withdrawals from 50 EUR balance | Balance = 0, never negative |
+
+### Expected Output
+
+```
+========================================
+  CONCURRENCY TESTS - Banking System
+========================================
+
+--- Concurrent Deposits (20 ops) ---
+Result: PASSED ✓
+  Final Balance: 200 EUR (expected: 200 EUR)
+  Successful Ops: 20/20
+  Total Retries: ~100-150
+  Duration: ~10-15s
+
+--- Mixed Operations (30 ops) ---
+Result: PASSED ✓
+  Final Balance: 175 EUR (must be >= 0)
+  Successful Ops: 30/30
+
+--- Overdraft Prevention (10 ops) ---
+Result: PASSED ✓
+  Final Balance: 0 EUR (must be >= 0)
+  Successful Ops: 10/10
+
+========================================
+  TEST SUMMARY
+========================================
+Total: 3 passed, 0 failed
+```
+
+## Project Structure
+
+```
+app/                    # Screens (file-based routing)
+├── index.tsx           # Auth/Home screen
+└── (banking)/          # Banking screens
+    ├── index.tsx       # Dashboard
+    ├── deposit.tsx     # Deposit screen
+    ├── withdraw.tsx    # Withdraw screen
+    └── history.tsx     # Transaction history
+
+components/             # Reusable components
+├── ui/                 # Base UI components
+└── auth/               # Auth form components
+
+contexts/               # React Context providers
+├── auth-context.tsx    # Authentication state
+└── banking-context.tsx # Banking state
+
+lib/                    # Services and utilities
+├── supabase.ts         # Supabase client
+└── banking.ts          # Banking service (optimistic locking)
+
+types/                  # TypeScript definitions
+├── auth.ts
+└── banking.ts
+
+supabase/migrations/    # Database schema
+scripts/                # Test scripts
+```
+
+## Documentation
+
+See [TECHNICAL_REASONING.md](TECHNICAL_REASONING.md) for detailed technical documentation including:
+- Optimistic locking implementation
+- Retry logic with exponential backoff
+- Security considerations (RLS)
+- Architecture diagrams

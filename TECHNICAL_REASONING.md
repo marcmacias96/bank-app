@@ -13,13 +13,17 @@
 1. [Problem Statement](#1-problem-statement)
 2. [Solution Overview](#2-solution-overview)
 3. [Architecture](#3-architecture)
-4. [Data Model](#4-data-model)
-5. [Consistency Strategy](#5-consistency-strategy)
-6. [Error Handling](#6-error-handling)
-7. [Technical Debt Prevention](#7-technical-debt-prevention)
-8. [Concurrency Testing](#8-concurrency-testing)
-9. [Trade-offs](#9-trade-offs)
-10. [Security Considerations](#10-security-considerations)
+4. [Authentication](#4-authentication)
+5. [Data Model](#5-data-model)
+6. [Consistency Strategy](#6-consistency-strategy)
+7. [Error Handling](#7-error-handling)
+8. [UI Components](#8-ui-components)
+9. [Routing](#9-routing)
+10. [Demo Mode](#10-demo-mode)
+11. [Technical Debt Prevention](#11-technical-debt-prevention)
+12. [Concurrency Testing](#12-concurrency-testing)
+13. [Trade-offs](#13-trade-offs)
+14. [Security Considerations](#14-security-considerations)
 
 ---
 
@@ -73,25 +77,25 @@ The solution implements **Optimistic Concurrency Control (OCC)** using a version
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    PRESENTATION LAYER                        │
-│    React Native Screens (Dashboard, Deposit, Withdraw)       │
-│         Uses: useBanking() hook for state access             │
+│    React Native Screens (Auth, Dashboard, Deposit, etc.)     │
+│    Uses: useAuth(), useBanking() hooks for state access      │
+│    Styling: NativeWind (Tailwind CSS for React Native)       │
 ├─────────────────────────────────────────────────────────────┤
 │                      STATE LAYER                             │
-│              BankingContext (React Context)                  │
-│    Manages: account, transactions, loading, error states     │
+│         AuthContext          │      BankingContext           │
+│    (user, session, auth)     │  (account, transactions)      │
 ├─────────────────────────────────────────────────────────────┤
 │                     SERVICE LAYER                            │
-│               lib/banking.ts                                 │
-│    Implements: updateBalance() with retry logic              │
-│    Features: Exponential backoff, idempotency keys           │
+│      lib/supabase.ts         │      lib/banking.ts           │
+│    (Supabase client)         │  (updateBalance + retry)      │
 ├─────────────────────────────────────────────────────────────┤
 │                    DATABASE LAYER                            │
-│              Supabase RPC: update_balance()                  │
-│    Implements: Optimistic locking, atomic updates            │
+│              Supabase Auth   │   Supabase RPC                │
+│         (JWT, sessions)      │  (update_balance function)    │
 ├─────────────────────────────────────────────────────────────┤
 │                   STORAGE LAYER                              │
 │                   PostgreSQL                                 │
-│    Enforces: CHECK (balance >= 0), version column            │
+│    auth.users │ accounts (version, CHECK >= 0) │ transactions│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -119,7 +123,70 @@ Process A                         Process B
 
 ---
 
-## 4. Data Model
+## 4. Authentication
+
+### Overview
+
+The application implements a complete authentication system using Supabase Auth, supporting multiple authentication methods while maintaining a seamless user experience.
+
+### Authentication Methods
+
+| Method | Implementation | Status |
+|--------|---------------|--------|
+| Email/Password | Native Supabase Auth | ✅ Implemented |
+
+
+### Auth Context Architecture
+
+```typescript
+interface AuthContextType {
+  user: User | null;
+  session: Session | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  signInWithOAuth: (provider: 'google' | 'apple' | 'github') => Promise<void>;
+}
+```
+
+### Auth Flow
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   App Start │───▶│ Check Auth  │───▶│  Has Token? │
+└─────────────┘    └─────────────┘    └──────┬──────┘
+                                             │
+                   ┌─────────────────────────┼─────────────────────────┐
+                   │ YES                     │                     NO  │
+                   ▼                         │                         ▼
+          ┌─────────────┐                    │                ┌─────────────┐
+          │   Banking   │                    │                │  Auth Form  │
+          │  Dashboard  │                    │                │ (or Demo)   │
+          └─────────────┘                    │                └─────────────┘
+```
+
+### Session Management
+
+- **Storage**: `@react-native-async-storage/async-storage`
+- **Auto-refresh**: Handled automatically by Supabase client
+- **Persistence**: Sessions persist across app restarts
+- **Listener**: `onAuthStateChange` updates React state in real-time
+
+### Auth Components
+
+| Component | Purpose |
+|-----------|---------|
+| `AuthForm` | Container switching between login/register |
+| `LoginForm` | Email/password sign-in form |
+| `RegisterForm` | Email/password sign-up form |
+| `AuthTabs` | Tab navigation for auth modes |
+| `FormField` | Reusable input field with validation |
+
+---
+
+## 5. Data Model
 
 ### Accounts Table
 
@@ -171,7 +238,7 @@ CREATE TABLE transactions (
 
 ---
 
-## 5. Consistency Strategy
+## 6. Consistency Strategy
 
 ### The Update Balance Algorithm
 
@@ -256,7 +323,7 @@ Each transaction has a unique `idempotency_key`. If a request is duplicated (e.g
 
 ---
 
-## 6. Error Handling
+## 7. Error Handling
 
 ### Error Taxonomy
 
@@ -294,7 +361,158 @@ class BankingError extends Error {
 
 ---
 
-## 7. Technical Debt Prevention
+## 8. UI Components
+
+### Component Library
+
+The application uses a custom component library built with NativeWind (Tailwind CSS for React Native) and inspired by shadcn/ui patterns.
+
+### Base Components
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `Button` | `components/ui/button.tsx` | Pressable with variants (default, outline, ghost, destructive) |
+| `Card` | `components/ui/card.tsx` | Container with header, content, footer sections |
+| `Input` | `components/ui/input.tsx` | Text input with NativeWind styling |
+| `Text` | `components/ui/text.tsx` | Typography component with Tailwind classes |
+| `Skeleton` | `components/ui/skeleton.tsx` | Loading placeholder with animation |
+
+### Styling Approach
+
+```tsx
+// Example: Button with variants using class-variance-authority
+const buttonVariants = cva(
+  "flex-row items-center justify-center rounded-md",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary",
+        outline: "border border-input bg-background",
+        ghost: "hover:bg-accent",
+        destructive: "bg-destructive",
+      },
+      size: {
+        default: "h-10 px-4 py-2",
+        sm: "h-9 px-3",
+        lg: "h-11 px-8",
+      },
+    },
+  }
+);
+```
+
+### Dependencies
+
+- `nativewind` v4.2.1 - Tailwind CSS for React Native
+- `tailwindcss` v3.4.19 - Utility-first CSS framework
+- `class-variance-authority` - Variant management for components
+- `clsx` + `tailwind-merge` - Class name utilities
+
+---
+
+## 9. Routing
+
+### File-Based Routing with Expo Router
+
+The application uses Expo Router v6 for file-based routing, providing a navigation structure similar to Next.js.
+
+### Route Structure
+
+```
+app/
+├── _layout.tsx          # Root layout (AuthProvider, SafeAreaProvider)
+├── index.tsx            # Home/Auth screen
+└── (banking)/           # Banking route group
+    ├── _layout.tsx      # Banking layout (BankingProvider, tabs/stack)
+    ├── index.tsx        # Dashboard screen
+    ├── deposit.tsx      # Deposit screen
+    ├── withdraw.tsx     # Withdraw screen
+    └── history.tsx      # Transaction history screen
+```
+
+### Navigation Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        app/_layout.tsx                       │
+│                  (SafeAreaProvider, AuthProvider)            │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌──────────────┐              ┌────────────────────────┐  │
+│   │ app/index    │              │   app/(banking)/       │  │
+│   │              │──[Login]────▶│      _layout.tsx       │  │
+│   │  Auth Form   │              │   (BankingProvider)    │  │
+│   │  Demo Mode   │◀─[Logout]────│                        │  │
+│   └──────────────┘              │   ┌────────────────┐   │  │
+│                                 │   │ index (Dash)   │   │  │
+│                                 │   │ deposit        │   │  │
+│                                 │   │ withdraw       │   │  │
+│                                 │   │ history        │   │  │
+│                                 │   └────────────────┘   │  │
+│                                 └────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Route Groups
+
+The `(banking)` folder uses parentheses to create a route group that:
+- Groups related screens together
+- Shares a common layout (BankingProvider)
+- Does not affect the URL path
+
+---
+
+## 10. Demo Mode
+
+### Purpose
+
+Demo mode allows users to explore the banking functionality without creating an account, providing a frictionless way to test the concurrent balance management features.
+
+### Implementation
+
+```typescript
+// In BankingContext
+const refreshAccount = useCallback(async () => {
+  if (isAuthenticated) {
+    // Authenticated: get user's account
+    data = await getUserAccount();
+  } else {
+    // Demo mode: get or create demo account
+    data = await getOrCreateDemoAccount();
+  }
+}, [isAuthenticated]);
+```
+
+### Demo Account Characteristics
+
+| Property | Value | Notes |
+|----------|-------|-------|
+| `user_id` | `NULL` | Distinguishes from real accounts |
+| `initial_balance` | 100 EUR | Default starting balance |
+| `persistence` | Per-session | New demo account each session |
+| `features` | Full | All banking features available |
+
+### RLS Policies for Demo Mode
+
+```sql
+-- Migration 002_demo_account.sql
+-- Allows demo accounts (user_id IS NULL) to bypass RLS
+CREATE POLICY "Demo accounts are public"
+    ON accounts FOR ALL
+    USING (user_id IS NULL);
+```
+
+### User Experience
+
+1. User opens app → sees auth form
+2. Clicks "Continue in demo mode"
+3. Redirected to banking dashboard with demo account
+4. Can perform deposits, withdrawals, view history
+5. Data resets on app restart (no persistence)
+
+---
+
+## 11. Technical Debt Prevention
 
 ### Code Quality Practices
 
@@ -321,7 +539,7 @@ class BankingError extends Error {
 
 ---
 
-## 8. Concurrency Testing
+## 12. Concurrency Testing
 
 ### Test Suite Overview
 
@@ -390,7 +608,7 @@ Total: 3 passed, 0 failed
 
 ---
 
-## 9. Trade-offs
+## 13. Trade-offs
 
 ### Accepted Trade-offs
 
@@ -413,7 +631,7 @@ Total: 3 passed, 0 failed
 
 ---
 
-## 10. Security Considerations
+## 14. Security Considerations
 
 ### Row Level Security (RLS)
 
@@ -470,12 +688,77 @@ The architecture follows clean code principles with clear separation of concerns
 
 ## Files Overview
 
+### Core Application Files
+
 | File | Purpose |
 |------|---------|
-| `supabase/migrations/001_banking.sql` | Database schema and functions |
-| `types/banking.ts` | TypeScript type definitions |
-| `lib/banking.ts` | Service layer with retry logic |
-| `contexts/banking-context.tsx` | React state management |
-| `app/(banking)/*.tsx` | UI screens |
+| `app/_layout.tsx` | Root layout with AuthProvider |
+| `app/index.tsx` | Home/Auth screen |
+| `app/(banking)/_layout.tsx` | Banking layout with BankingProvider |
+| `app/(banking)/index.tsx` | Dashboard screen |
+| `app/(banking)/deposit.tsx` | Deposit screen |
+| `app/(banking)/withdraw.tsx` | Withdraw screen |
+| `app/(banking)/history.tsx` | Transaction history screen |
+
+### Authentication
+
+| File | Purpose |
+|------|---------|
+| `contexts/auth-context.tsx` | Auth state management (useAuth hook) |
+| `types/auth.ts` | Auth TypeScript types |
+| `components/auth/auth-form.tsx` | Auth form container |
+| `components/auth/login-form.tsx` | Email/password login |
+| `components/auth/register-form.tsx` | Email/password registration |
+| `components/auth/auth-tabs.tsx` | Tab navigation for auth |
+| `components/auth/form-field.tsx` | Reusable form input |
+
+### Banking System
+
+| File | Purpose |
+|------|---------|
+| `types/banking.ts` | Banking TypeScript types & BankingError class |
+| `lib/banking.ts` | Service layer with optimistic locking & retry |
+| `contexts/banking-context.tsx` | Banking state management (useBanking hook) |
+| `lib/validations.ts` | Input validation utilities |
+
+### UI Components
+
+| File | Purpose |
+|------|---------|
+| `components/ui/button.tsx` | Button with variants |
+| `components/ui/card.tsx` | Card container components |
+| `components/ui/input.tsx` | Text input component |
+| `components/ui/text.tsx` | Typography component |
+| `components/ui/skeleton.tsx` | Loading skeleton |
+
+### Configuration
+
+| File | Purpose |
+|------|---------|
+| `lib/supabase.ts` | Supabase client configuration |
+| `lib/utils.ts` | Utility functions (cn for classnames) |
+| `tailwind.config.js` | Tailwind CSS configuration |
+| `metro.config.js` | Metro bundler config for NativeWind |
+| `babel.config.js` | Babel configuration |
+| `global.css` | Global Tailwind styles |
+
+### Database
+
+| File | Purpose |
+|------|---------|
+| `supabase/migrations/001_banking.sql` | Schema, RLS, update_balance function |
+| `supabase/migrations/002_demo_account.sql` | Demo account support |
+
+### Testing & Scripts
+
+| File | Purpose |
+|------|---------|
 | `scripts/test-concurrency.ts` | Concurrency test suite |
+
+### Documentation
+
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | Development guide for AI assistants |
 | `TECHNICAL_REASONING.md` | This document |
+| `README.md` | Project overview |

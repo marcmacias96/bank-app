@@ -1,5 +1,5 @@
 {
-  "name": "first-app",
+  "name": "dolar-app",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
@@ -50,9 +50,13 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "@types/react-native": "^0.72.8",
+    "dotenv": "^17.2.3",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "lightningcss-darwin-arm64": "^1.27.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "~5.9.2"
   },
   "private": true,

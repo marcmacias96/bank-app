@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "first-app",
-    "slug": "first-app",
+    "name": "DOLAR APP",
+    "slug": "dolar-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "firstapp",
+    "icon": "./assets/dolar.png",
+    "scheme": "dolarapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -30,7 +30,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/dolar.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

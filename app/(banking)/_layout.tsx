@@ -1,5 +1,5 @@
-import { Stack } from "expo-router";
 import { BankingProvider } from "@/contexts/banking-context";
+import { Stack } from "expo-router";
 
 export default function BankingLayout() {
   return (
@@ -8,7 +8,7 @@ export default function BankingLayout() {
         <Stack.Screen
           name="index"
           options={{
-            title: "Account",
+            title: "DOLAR APP",
             headerShown: true,
           }}
         />

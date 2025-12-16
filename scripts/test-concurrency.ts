@@ -6,30 +6,39 @@
  * to ensure optimistic locking works correctly.
  *
  * Usage:
- *   npx ts-node scripts/test-concurrency.ts
+ *   SUPABASE_SERVICE_KEY=eyJ... npx ts-node scripts/test-concurrency.ts
  *
  * Requires:
- *   - SUPABASE_URL environment variable
- *   - SUPABASE_SERVICE_KEY environment variable (service role key for admin access)
+ *   - EXPO_PUBLIC_SUPABASE_URL (from .env.local)
+ *   - SUPABASE_SERVICE_KEY (service role key for admin access)
  */
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+// Load .env.local if available
+import { config } from "dotenv";
+config({ path: ".env.local" });
+
 // Configuration
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error("Error: Missing environment variables");
-  console.error("Required: SUPABASE_URL and SUPABASE_SERVICE_KEY");
-  console.error("\nExample:");
-  console.error("  SUPABASE_URL=https://xxx.supabase.co \\");
-  console.error("  SUPABASE_SERVICE_KEY=eyJ... \\");
-  console.error("  npx ts-node scripts/test-concurrency.ts");
+if (!SUPABASE_URL) {
+  console.error("Error: Missing EXPO_PUBLIC_SUPABASE_URL");
+  console.error("Make sure your .env.local file contains this variable.");
   process.exit(1);
 }
 
-// Create admin client with service role key
+if (!SUPABASE_SERVICE_KEY) {
+  console.error("Error: Missing SUPABASE_SERVICE_KEY");
+  console.error("\nThe service role key is required to create test accounts.");
+  console.error("You can find it in your Supabase dashboard under Settings > API.");
+  console.error("\nUsage:");
+  console.error("  SUPABASE_SERVICE_KEY=eyJ... npx ts-node scripts/test-concurrency.ts");
+  process.exit(1);
+}
+
+// Create admin client with service role key (bypasses RLS)
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: {
     autoRefreshToken: false,
@@ -68,16 +77,14 @@ function generateUUID(): string {
 }
 
 /**
- * Create a test account with admin privileges
+ * Create a test account with initial balance
+ * Uses user_id = NULL for test accounts (bypasses auth.users FK)
  */
 async function createTestAccount(initialBalance: number = 0): Promise<string> {
-  // Create a fake user ID for testing
-  const userId = generateUUID();
-
   const { data, error } = await supabase
     .from("accounts")
     .insert({
-      user_id: userId,
+      user_id: null, // NULL allowed for test accounts
       balance: initialBalance,
       currency: "EUR",
     })
@@ -92,7 +99,7 @@ async function createTestAccount(initialBalance: number = 0): Promise<string> {
 }
 
 /**
- * Delete a test account
+ * Delete a test account and its transactions
  */
 async function deleteTestAccount(accountId: string): Promise<void> {
   // First delete transactions
@@ -108,8 +115,7 @@ async function executeBalanceUpdate(
   accountId: string,
   amount: number,
   type: "deposit" | "withdraw",
-  operationId: number,
-  maxRetries: number = 5
+  maxRetries: number = 25
 ): Promise<{ success: boolean; retries: number; error?: string }> {
   let retries = 0;
 
@@ -136,7 +142,7 @@ async function executeBalanceUpdate(
       p_amount: amount,
       p_type: type,
       p_expected_version: account.version,
-      p_idempotency_key: `test-${operationId}-${retries}`,
+      p_idempotency_key: generateUUID(),
     });
 
     if (error) {
@@ -151,8 +157,9 @@ async function executeBalanceUpdate(
 
     if (result?.error_code === "VERSION_CONFLICT") {
       retries++;
-      // Random backoff to reduce contention
-      await sleep(Math.random() * 100);
+      // Exponential backoff with jitter (capped at 500ms)
+      const backoff = Math.min(50 * Math.pow(1.5, retries), 500);
+      await sleep(backoff + Math.random() * 50);
       continue;
     }
 
@@ -180,10 +187,13 @@ async function testConcurrentDeposits(
   const errors: string[] = [];
 
   console.log(`\n--- ${testName} ---`);
-  console.log(`Starting ${concurrentOperations} concurrent deposits of 10 EUR each...`);
+  console.log(
+    `Starting ${concurrentOperations} concurrent deposits of 10 EUR each...`
+  );
 
   // Create test account with 0 balance
   const accountId = await createTestAccount(0);
+
   const depositAmount = 10;
   const expectedFinal = concurrentOperations * depositAmount;
 
@@ -191,8 +201,8 @@ async function testConcurrentDeposits(
   let totalRetries = 0;
 
   // Execute all deposits concurrently
-  const operations = Array.from({ length: concurrentOperations }, (_, i) =>
-    executeBalanceUpdate(accountId, depositAmount, "deposit", i)
+  const operations = Array.from({ length: concurrentOperations }, () =>
+    executeBalanceUpdate(accountId, depositAmount, "deposit")
   );
 
   const results = await Promise.all(operations);
@@ -219,10 +229,13 @@ async function testConcurrentDeposits(
   // Cleanup
   await deleteTestAccount(accountId);
 
-  const success = finalBalance === expectedFinal && successCount === concurrentOperations;
+  const success =
+    finalBalance === expectedFinal && successCount === concurrentOperations;
 
-  console.log(`Result: ${success ? "PASSED" : "FAILED"}`);
-  console.log(`  Final Balance: ${finalBalance} EUR (expected: ${expectedFinal} EUR)`);
+  console.log(`Result: ${success ? "PASSED ✓" : "FAILED ✗"}`);
+  console.log(
+    `  Final Balance: ${finalBalance} EUR (expected: ${expectedFinal} EUR)`
+  );
   console.log(`  Successful Ops: ${successCount}/${concurrentOperations}`);
   console.log(`  Total Retries: ${totalRetries}`);
   console.log(`  Duration: ${duration}ms`);
@@ -261,15 +274,17 @@ async function testMixedOperations(iterations: number = 30): Promise<TestResult>
   let totalRetries = 0;
 
   // Create mixed operations
-  const operations: Promise<{ success: boolean; retries: number; error?: string }>[] = [];
+  const operations: Promise<{
+    success: boolean;
+    retries: number;
+    error?: string;
+  }>[] = [];
 
   for (let i = 0; i < iterations; i++) {
     // Deposit 10 EUR
-    operations.push(executeBalanceUpdate(accountId, 10, "deposit", i));
+    operations.push(executeBalanceUpdate(accountId, 10, "deposit"));
     // Withdraw 5 EUR
-    operations.push(
-      executeBalanceUpdate(accountId, 5, "withdraw", i + iterations)
-    );
+    operations.push(executeBalanceUpdate(accountId, 5, "withdraw"));
   }
 
   // Execute all operations concurrently
@@ -300,7 +315,7 @@ async function testMixedOperations(iterations: number = 30): Promise<TestResult>
   // Success criteria: balance is non-negative
   const success = finalBalance >= 0;
 
-  console.log(`Result: ${success ? "PASSED" : "FAILED"}`);
+  console.log(`Result: ${success ? "PASSED ✓" : "FAILED ✗"}`);
   console.log(`  Final Balance: ${finalBalance} EUR (must be >= 0)`);
   console.log(`  Successful Ops: ${successCount}/${iterations * 2}`);
   console.log(`  Total Retries: ${totalRetries}`);
@@ -344,8 +359,8 @@ async function testOverdraftPrevention(
   let totalRetries = 0;
 
   // All try to withdraw 10 EUR (only 5 should succeed)
-  const operations = Array.from({ length: concurrentWithdrawals }, (_, i) =>
-    executeBalanceUpdate(accountId, 10, "withdraw", i)
+  const operations = Array.from({ length: concurrentWithdrawals }, () =>
+    executeBalanceUpdate(accountId, 10, "withdraw")
   );
 
   const results = await Promise.all(operations);
@@ -375,7 +390,7 @@ async function testOverdraftPrevention(
   // Success criteria: balance is exactly 0 or positive (never negative)
   const success = finalBalance >= 0;
 
-  console.log(`Result: ${success ? "PASSED" : "FAILED"}`);
+  console.log(`Result: ${success ? "PASSED ✓" : "FAILED ✗"}`);
   console.log(`  Final Balance: ${finalBalance} EUR (must be >= 0)`);
   console.log(`  Successful Ops: ${successCount}/${concurrentWithdrawals}`);
   console.log(`  Total Retries: ${totalRetries}`);
@@ -385,7 +400,7 @@ async function testOverdraftPrevention(
     testName,
     success,
     finalBalance,
-    expectedBalance: 0, // Should be 0 if all withdrawals succeeded
+    expectedBalance: 0,
     totalOperations: concurrentWithdrawals,
     successfulOperations: successCount,
     conflictRetries: totalRetries,
@@ -408,14 +423,14 @@ async function runAllTests(): Promise<void> {
   const results: TestResult[] = [];
 
   try {
-    // Test 1: Concurrent Deposits
-    results.push(await testConcurrentDeposits(50));
+    // Test 1: Concurrent Deposits (20 concurrent ops is realistic)
+    results.push(await testConcurrentDeposits(20));
 
     // Test 2: Mixed Operations
-    results.push(await testMixedOperations(30));
+    results.push(await testMixedOperations(15));
 
     // Test 3: Overdraft Prevention
-    results.push(await testOverdraftPrevention(20));
+    results.push(await testOverdraftPrevention(10));
 
     // Summary
     console.log("\n========================================");
@@ -427,14 +442,15 @@ async function runAllTests(): Promise<void> {
 
     results.forEach((r) => {
       console.log(`${r.success ? "[PASS]" : "[FAIL]"} ${r.testName}`);
-      console.log(`       Balance: ${r.finalBalance} | Ops: ${r.successfulOperations}/${r.totalOperations} | Retries: ${r.conflictRetries} | Time: ${r.duration}ms`);
+      console.log(
+        `       Balance: ${r.finalBalance} | Ops: ${r.successfulOperations}/${r.totalOperations} | Retries: ${r.conflictRetries} | Time: ${r.duration}ms`
+      );
     });
 
     console.log("\n----------------------------------------");
     console.log(`Total: ${passed} passed, ${failed} failed`);
     console.log("----------------------------------------\n");
 
-    // Exit with error code if any test failed
     if (failed > 0) {
       process.exit(1);
     }

@@ -5,9 +5,10 @@
 
 -- 1. ACCOUNTS TABLE
 -- Stores bank account information with optimistic locking support
+-- user_id is nullable to support demo accounts (NULL = demo)
 CREATE TABLE IF NOT EXISTS accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     balance DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
     version INTEGER NOT NULL DEFAULT 1,
     currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
@@ -81,8 +82,10 @@ DROP POLICY IF EXISTS "Users can insert own accounts" ON accounts;
 DROP POLICY IF EXISTS "Users can update own accounts" ON accounts;
 DROP POLICY IF EXISTS "Users can view own transactions" ON transactions;
 DROP POLICY IF EXISTS "Users can insert own transactions" ON transactions;
+DROP POLICY IF EXISTS "Demo user can view demo accounts" ON accounts;
+DROP POLICY IF EXISTS "Demo user can view demo transactions" ON transactions;
 
--- Account policies
+-- Account policies for authenticated users
 CREATE POLICY "Users can view own accounts"
     ON accounts FOR SELECT
     USING (auth.uid() = user_id);
@@ -95,7 +98,12 @@ CREATE POLICY "Users can update own accounts"
     ON accounts FOR UPDATE
     USING (auth.uid() = user_id);
 
--- Transaction policies
+-- Account policies for demo users (user_id IS NULL)
+CREATE POLICY "Demo user can view demo accounts"
+    ON accounts FOR SELECT
+    USING (user_id IS NULL);
+
+-- Transaction policies for authenticated users
 CREATE POLICY "Users can view own transactions"
     ON transactions FOR SELECT
     USING (account_id IN (
@@ -108,9 +116,17 @@ CREATE POLICY "Users can insert own transactions"
         SELECT id FROM accounts WHERE user_id = auth.uid()
     ));
 
+-- Transaction policies for demo users
+CREATE POLICY "Demo user can view demo transactions"
+    ON transactions FOR SELECT
+    USING (account_id IN (
+        SELECT id FROM accounts WHERE user_id IS NULL
+    ));
+
 
 -- 4. UPDATE_BALANCE FUNCTION
 -- Core function implementing optimistic locking for concurrent balance updates
+-- Supports both authenticated users and demo accounts
 CREATE OR REPLACE FUNCTION update_balance(
     p_account_id UUID,
     p_amount DECIMAL(15, 2),
@@ -135,13 +151,14 @@ DECLARE
     v_new_balance DECIMAL(15, 2);
     v_rows_affected INTEGER;
     v_user_id UUID;
+    v_account_exists BOOLEAN;
 BEGIN
-    -- 1. Verify user owns this account (security check)
-    SELECT a.user_id INTO v_user_id
+    -- 1. Verify account exists and get user_id
+    SELECT a.user_id, TRUE INTO v_user_id, v_account_exists
     FROM accounts a
     WHERE a.id = p_account_id;
 
-    IF v_user_id IS NULL THEN
+    IF NOT v_account_exists THEN
         RETURN QUERY SELECT
             FALSE,
             NULL::DECIMAL(15,2),
@@ -151,7 +168,8 @@ BEGIN
         RETURN;
     END IF;
 
-    IF v_user_id != auth.uid() THEN
+    -- Allow if: user owns account OR it's a demo account (user_id IS NULL)
+    IF v_user_id IS NOT NULL AND v_user_id != auth.uid() THEN
         RETURN QUERY SELECT
             FALSE,
             NULL::DECIMAL(15,2),
@@ -289,8 +307,9 @@ BEGIN
 END;
 $$;
 
--- Grant execute permission to authenticated users
+-- Grant execute permission to authenticated and anonymous users
 GRANT EXECUTE ON FUNCTION update_balance TO authenticated;
+GRANT EXECUTE ON FUNCTION update_balance TO anon;
 
 
 -- 5. HELPER FUNCTION: Create account for current user
@@ -315,3 +334,39 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION create_user_account TO authenticated;
+
+
+-- 6. HELPER FUNCTION: Create demo account (for testing without auth)
+CREATE OR REPLACE FUNCTION create_demo_account(
+    p_initial_balance DECIMAL(15, 2) DEFAULT 100.00,
+    p_currency VARCHAR(3) DEFAULT 'EUR'
+)
+RETURNS accounts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_new_account accounts;
+BEGIN
+    -- Check if demo account already exists (user_id IS NULL means demo)
+    SELECT * INTO v_new_account
+    FROM accounts
+    WHERE user_id IS NULL
+    LIMIT 1;
+
+    IF v_new_account.id IS NOT NULL THEN
+        RETURN v_new_account;
+    END IF;
+
+    -- Create new demo account with NULL user_id
+    INSERT INTO accounts (user_id, balance, currency)
+    VALUES (NULL, p_initial_balance, p_currency)
+    RETURNING * INTO v_new_account;
+
+    RETURN v_new_account;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION create_demo_account TO anon;
+GRANT EXECUTE ON FUNCTION create_demo_account TO authenticated;

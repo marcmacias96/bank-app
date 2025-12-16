@@ -1,22 +1,22 @@
-import {
-  View,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
-} from "react-native";
-import { Link } from "expo-router";
-import { useAuth } from "@/contexts/auth-context";
+import { AuthForm } from "@/components/auth/auth-form";
 import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AuthForm } from "@/components/auth/auth-form";
+import { Text } from "@/components/ui/text";
+import { useAuth } from "@/contexts/auth-context";
+import { Link } from "expo-router";
+import {
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    View,
+} from "react-native";
 
 export default function Index() {
   const { isLoading, isAuthenticated, user, signOut } = useAuth();
@@ -35,7 +35,7 @@ export default function Index() {
         <Card className="w-full max-w-sm">
           <CardHeader>
             <CardTitle>
-              <Text className="text-2xl font-bold">Peninsula Banking</Text>
+              <Text className="text-2xl font-bold">DOLAR APP</Text>
             </CardTitle>
             <CardDescription>
               <Text className="text-muted-foreground">
